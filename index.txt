@@ -1,0 +1,279 @@
+const { Client, GatewayIntentBits, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessageReactions
+    ]
+});
+
+const userBalances = {};
+const userLevels = {};
+
+client.once('ready', () => {
+    console.log("=================================");
+    console.log(`Lyra Bot is online as: ${client.user.tag}`);
+    console.log("All server systems & say command are READY!");
+    console.log("=================================");
+});
+
+client.on('guildMemberAdd', async (member) => {
+    const welcomeChannel = member.guild.channels.cache.find(ch => 
+        ch.name === 'welcome' || ch.name === 'general' || ch.name === 'الترحيب' || ch.name === 'عام'
+    );
+    
+    if (welcomeChannel) {
+        const welcomeEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle('🎉 New Member Joined!')
+            .setDescription(`Welcome ${member} to **${member.guild.name}**!\nWe are thrilled to have you here 💖`)
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+            .setFooter({ text: 'Enjoy your stay!' })
+            .setTimestamp();
+
+        welcomeChannel.send({ embeds: [welcomeEmbed] });
+    }
+
+    const autoRole = member.guild.roles.cache.find(r => r.name === 'Member' || r.name === 'عضو');
+    if (autoRole) {
+        await member.roles.add(autoRole).catch(() => {});
+    }
+});
+
+client.on('messageCreate', async (message) => {
+    if (message.author.bot || !message.guild) return;
+
+    // حماية من نشر الروابط
+    const hasAdmin = message.member.permissions.has(PermissionFlagsBits.Administrator);
+    if (!hasAdmin && (message.content.includes('http://') || message.content.includes('https://') || message.content.includes('discord.gg/'))) {
+        await message.delete().catch(() => {});
+        return message.channel.send(`⚠️ ${message.author}, links and advertisements are not allowed here!`).then(m => setTimeout(() => m.delete(), 4000));
+    }
+
+    // نظام المستويات
+    const userId = message.author.id;
+    if (!userLevels[userId]) userLevels[userId] = { xp: 0, level: 1 };
+    userLevels[userId].xp += 5;
+    if (userLevels[userId].xp >= userLevels[userId].level * 50) {
+        userLevels[userId].level += 1;
+        message.channel.send(`🎉 Congratulations ${message.author}! You leveled up to **Level ${userLevels[userId].level}**!`);
+    }
+
+    const args = message.content.split(' ');
+    const command = args[0].toLowerCase();
+    const targetMember = message.mentions.members.first();
+
+    // ================= أمر الإعلان والقول باللغة العربية =================
+    if (command === 'قول' || command === 'say' || command === 'sayin') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+            return message.reply('❌ ليس لديك صلاحيات لاستخدام هذا الأمر!');
+        }
+
+        const targetChannel = message.mentions.channels.first();
+        let textToSend = '';
+
+        if (targetChannel) {
+            textToSend = args.slice(2).join(' ');
+        } else {
+            textToSend = args.slice(1).join(' ');
+        }
+
+        if (!textToSend) {
+            return message.reply('⚠️ يرجى كتابة الرسالة التي تريد من البوت إرسالها! (مثال: `قول #عامة مرحباً بالجميع`)');
+        }
+
+        await message.delete().catch(() => {});
+
+        if (targetChannel) {
+            targetChannel.send(textToSend);
+        } else {
+            message.channel.send(textToSend);
+        }
+        return;
+    }
+
+    // ================= بقية الأوامر الإدارية والترفيهية =================
+
+    if (command === 'clear' || command === 'purge') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) return message.reply('❌ You do not have permission to manage messages!');
+        const amount = parseInt(args[1]);
+        if (isNaN(amount) || amount < 1 || amount > 100) return message.reply('⚠️ Please provide a number between 1 and 100!');
+        await message.channel.bulkDelete(amount + 1, true).catch(() => {});
+        const msg = await message.channel.send(`🧹 Successfully deleted **${amount}** messages!`);
+        setTimeout(() => msg.delete(), 3000);
+    }
+
+    if (command === 'kick') {
+        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply('❌ You do not have permission to kick members!');
+        if (!targetMember) return message.reply('⚠️ Please mention the user you want to kick!');
+        await targetMember.kick();
+        message.reply(`✅ **${targetMember.user.tag}** has been kicked successfully.`);
+    }
+
+    if (command === 'ban') {
+        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply('❌ You do not have permission to ban members!');
+        if (!targetMember) return message.reply('⚠️ Please mention the user you want to ban!');
+        await targetMember.ban();
+        message.reply(`🔨 **${targetMember.user.tag}** has been banned.`);
+    }
+
+    if (command === 'mute') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) return message.reply('❌ You do not have permission to mute members!');
+        if (!targetMember) return message.reply('⚠️ Please mention the user to mute!');
+        await targetMember.timeout(10 * 60 * 1000, 'Muted by Moderator');
+        message.reply(`🤐 **${targetMember.user.tag}** has been muted for 10 minutes.`);
+    }
+
+    if (command === 'unmute') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) return message.reply('❌ You do not have permission!');
+        if (!targetMember) return message.reply('⚠️ Please mention the user to unmute!');
+        await targetMember.timeout(null);
+        message.reply(`🔊 **${targetMember.user.tag}** has been unmuted.`);
+    }
+
+    if (command === 'jail') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply('❌ Administrator permission required!');
+        if (!targetMember) return message.reply('⚠️ Please mention the user to jail!');
+        const jailRole = message.guild.roles.cache.find(r => r.name === 'Jail' || r.name === 'Muted' || r.name === 'موجون');
+        if (!jailRole) return message.reply('⚠️ Please create a role named **Jail** in the server first!');
+        await targetMember.roles.add(jailRole);
+        message.reply(`🔒 **${targetMember.user.tag}** has been jailed!`);
+    }
+
+    if (command === 'unjail') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply('❌ Administrator permission required!');
+        if (!targetMember) return message.reply('⚠️ Please mention the user to unjail!');
+        const jailRole = message.guild.roles.cache.find(r => r.name === 'Jail' || r.name === 'Muted' || r.name === 'موجون');
+        if (jailRole) await targetMember.roles.remove(jailRole);
+        message.reply(`🔓 **${targetMember.user.tag}** has been released from jail.`);
+    }
+
+    if (command === 'lock') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply('❌ You do not have permission to manage channels!');
+        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
+        message.reply('🔒 Channel has been locked.');
+    }
+
+    if (command === 'unlock') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply('❌ You do not have permission to manage channels!');
+        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: true });
+        message.reply('🔓 Channel has been unlocked.');
+    }
+
+    if (command === 'nick' || command === 'nickname') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageNicknames)) return message.reply('❌ You do not have permission to manage nicknames!');
+        if (!targetMember) return message.reply('⚠️ Please mention a user!');
+        const newNick = args.slice(2).join(' ');
+        if (!newNick) return message.reply('⚠️ Please write the new nickname!');
+        await targetMember.setNickname(newNick).catch(() => message.reply('❌ Cannot change nickname!'));
+        message.reply(`✏️ Nickname changed for **${targetMember.user.username}** to **${newNick}**`);
+    }
+
+    if (command === 'role') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles)) return message.reply('❌ You do not have permission to manage roles!');
+        if (!targetMember) return message.reply('⚠️ Please mention a user!');
+        const role = message.mentions.roles.first();
+        if (!role) return message.reply('⚠️ Please mention the role!');
+        await targetMember.roles.add(role).catch(() => message.reply('❌ Cannot add this role!'));
+        message.reply(`✅ Given **${role.name}** role to **${targetMember.user.tag}**`);
+    }
+
+    if (command === 'derole') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles)) return message.reply('❌ You do not have permission to manage roles!');
+        if (!targetMember) return message.reply('⚠️ Please mention a user!');
+        const role = message.mentions.roles.first();
+        if (!role) return message.reply('⚠️ Please mention the role!');
+        await targetMember.roles.remove(role).catch(() => message.reply('❌ Cannot remove this role!'));
+        message.reply(`🗑️ Removed **${role.name}** role from **${targetMember.user.tag}**`);
+    }
+
+    if (command === 'user' || command === 'userinfo') {
+        const member = targetMember || message.member;
+        const userEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle(`👤 User Info - ${member.user.tag}`)
+            .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+            .addFields(
+                { name: '🆔 User ID', value: member.id, inline: true },
+                { name: '📅 Joined Server', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`, inline: true },
+                { name: '🚀 Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true }
+            )
+            .setTimestamp();
+        message.channel.send({ embeds: [userEmbed] });
+    }
+
+    if (command === 'avatar') {
+        const member = targetMember || message.member;
+        const avatarEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle(`🖼️️ Avatar for ${member.user.tag}`)
+            .setImage(member.user.displayAvatarURL({ dynamic: true, size: 1024 }));
+        message.channel.send({ embeds: [avatarEmbed] });
+    }
+
+    if (command === 'server' || command === 'serverinfo') {
+        const { guild } = message;
+        const serverEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle(`🏰 Server Info - ${guild.name}`)
+            .setThumbnail(guild.iconURL({ dynamic: true }))
+            .addFields(
+                { name: '👑 Owner', value: `<@${guild.ownerId}>`, inline: true },
+                { name: '👥 Total Members', value: `${guild.memberCount}`, inline: true },
+                { name: '💬 Channels', value: `${guild.channels.cache.size}`, inline: true },
+                { name: '🎭 Roles', value: `${guild.roles.cache.size}`, inline: true }
+            )
+            .setTimestamp();
+        message.channel.send({ embeds: [serverEmbed] });
+    }
+
+    if (command === 'level' || command === 'rank') {
+        const lvlData = userLevels[userId] || { level: 1, xp: 0 };
+        message.reply(`📊 Your Current Rank: **Level ${lvlData.level}** (${lvlData.xp} XP)`);
+    }
+
+    if (command === 'daily') {
+        if (!userBalances[userId]) userBalances[userId] = 0;
+        userBalances[userId] += 500;
+        message.reply(`💰 Claimed your daily reward of **500 coins**! Total balance: $${userBalances[userId]}`);
+    }
+
+    if (command === 'balance' || command === 'bal') {
+        const bal = userBalances[userId] || 0;
+        message.reply(`💵 Current Bank Balance: **$${bal}**`);
+    }
+
+    if (command === 'wyr') {
+        const questions = [
+            'Would you rather see the future or change the past? ⏳',
+            'Would you rather live without internet or without sleep for 2 days? 📱',
+            'Would you rather have the ability to fly or be invisible? 🦸‍♂️',
+            'Would you rather eat your favorite meal forever or never eat it again? 🍕'
+        ];
+        const randomQ = questions[Math.floor(Math.random() * questions.length)];
+        message.reply(`🤔 **Would You Rather:**\n${randomQ}`);
+    }
+
+    if (command === 'help' || command === 'commands') {
+        const helpEmbed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle('📖 Lyra Bot - Command Menu')
+            .setDescription('Write commands directly without prefixes:')
+            .addFields(
+                { name: '📢 الإعلانات والرسائل:', value: '`قول #الروم الرسالة` - يرسل الرسالة باسم البوت\n`قول الرسالة` - يرسل الرسالة في نفس الروم' },
+                { name: '🛡️ Moderation:', value: '`clear [amount]`\n`kick @user`\n`ban @user`\n`mute @user`\n`unmute @user`\n`jail @user`\n`unjail @user`' },
+                { name: '⚙️ Management:', value: '`lock`\n`unlock`\n`nick @user NewName`\n`role @user @Role`\n`derole @user @Role`' },
+                { name: 'ℹ️ Info:', value: '`user @user`\n`avatar @user`\n`server`' },
+                { name: '🎮 Fun & Economy:', value: '`level`\n`daily`\n`balance`\n`wyr`' }
+            )
+            .setFooter({ text: 'Powered by Lyra Bot System' })
+            .setTimestamp();
+
+        message.channel.send({ embeds: [helpEmbed] });
+    }
+});
+
+client.login('MTUyMDg0NTU4NjExNzU1ODMxMg.GqUaqH.OJTRz-8hBcz_n-dd0dJ91qPkqgP8G1wTlZQehQ');
